@@ -1,4 +1,4 @@
-FROM golang:1.9.2-alpine3.7
+FROM golang:1.12-alpine
 
 ENV PROJECT=mongo-hot-backup
 COPY . /${PROJECT}-sources/

@@ -12,7 +12,7 @@ jobs:
   build:
     working_directory: /go/src/github.com/Financial-Times/mongo-hot-backup
     docker:
-      - image: golang:1.9.2
+      - image: circleci/golang:1.12
         environment:
           GOPATH: /go
           CIRCLE_TEST_REPORTS: /tmp/test-results
