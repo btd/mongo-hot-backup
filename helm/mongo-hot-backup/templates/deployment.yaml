@@ -18,6 +18,23 @@ spec:
         app: {{ .Values.service.name }}
         visualize: "true"
     spec:
+{{- if .Values.eksCluster }}
+      tolerations:
+      # Making sure that Mongo will be scheduled on dedicated nodes. These nodes are tainted and labeled by the provisioner.
+      - key: "ng-mongo"
+        operator: "Equal"
+        value: "false"
+        effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/ng-mongo
+                operator: In
+                values:
+                - "true"
+{{- else }}
       tolerations:
       # Making sure that Mongo will be scheduled on dedicated nodes. These nodes are tainted and labeled by the provisioner.
       - key: "dedicated"
@@ -33,6 +50,7 @@ spec:
                 operator: In
                 values:
                 - mongo-worker
+{{- end }}
       imagePullSecrets:
         - name: nexusregistry
       containers:
