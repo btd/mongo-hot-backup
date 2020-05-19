@@ -21,7 +21,7 @@ spec:
 {{- if .Values.eksCluster }}
       tolerations:
       # Making sure that Mongo will be scheduled on dedicated nodes. These nodes are tainted and labeled by the provisioner.
-      - key: "ng-mongo"
+      - key: "mongo"
         operator: "Equal"
         value: "false"
         effect: "NoSchedule"
@@ -30,10 +30,10 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: node-role.kubernetes.io/ng-mongo
+              - key: role
                 operator: In
                 values:
-                - "true"
+                - "mongo"
 {{- else }}
       tolerations:
       # Making sure that Mongo will be scheduled on dedicated nodes. These nodes are tainted and labeled by the provisioner.
