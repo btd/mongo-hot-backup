@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jawher/mow.cli"
+	cli "github.com/jawher/mow.cli"
 	"github.com/rlmcpherson/s3gof3r"
 	log "github.com/sirupsen/logrus"
 )
@@ -18,7 +18,7 @@ const (
 func main() {
 	s3gof3r.DefaultConfig.Md5Check = false
 
-	app := cli.App("mongobackup", "Backup and restore mongodb collections to/from s3\nBackups are put in a directory structure /<base-dir>/<date>/database/collection")
+	app := cli.App("mongo-hot-backup", "Backup and restore mongodb collections to/from s3 and fs\nBackups are put in a directory structure /<base-dir>/<date>/database/collection")
 
 	connStr := app.String(cli.StringOpt{
 		Name:   "mongodb",
@@ -27,33 +27,38 @@ func main() {
 		Value:  "localhost:27017",
 	})
 	s3domain := app.String(cli.StringOpt{
-		Name:   "s3domain",
+		Name:   "s3-domain",
 		Desc:   "s3 domain",
 		EnvVar: "S3_DOMAIN",
 		Value:  "s3-eu-west-1.amazonaws.com",
 	})
 	s3bucket := app.String(cli.StringOpt{
-		Name:   "bucket",
+		Name:   "s3-bucket",
 		Desc:   "s3 bucket name",
 		EnvVar: "S3_BUCKET",
-		Value:  "com.ft.coco-mongo-backup.prod",
 	})
 	s3dir := app.String(cli.StringOpt{
-		Name:   "base-dir",
+		Name:   "s3-base-dir",
 		Desc:   "s3 base directory name",
 		EnvVar: "S3_DIR",
 		Value:  "/backups/",
 	})
 	accessKey := app.String(cli.StringOpt{
-		Name:   "aws_access_key_id",
+		Name:   "aws-access-key-id",
 		Desc:   "AWS Access key id",
 		EnvVar: "AWS_ACCESS_KEY_ID",
 	})
 	secretKey := app.String(cli.StringOpt{
-		Name:      "aws_secret_access_key",
+		Name:      "aws-secret-access-key",
 		Desc:      "AWS secret access key",
 		EnvVar:    "AWS_SECRET_ACCESS_KEY",
 		HideValue: true,
+	})
+	fsdir := app.String(cli.StringOpt{
+		Name:   "fs-base-dir",
+		Desc:   "fs base directory name",
+		EnvVar: "FS_DIR",
+		Value:  "/backups/",
 	})
 	colls := app.String(cli.StringOpt{
 		Name:   "collections",
@@ -62,19 +67,19 @@ func main() {
 		Value:  "foo/content,foo/bar",
 	})
 	mongoTimeout := app.Int(cli.IntOpt{
-		Name:   "mongoTimeout",
+		Name:   "mongo-timeout",
 		Desc:   "Mongo session connection timeout in seconds. (e.g. 60)",
 		EnvVar: "MONGO_TIMEOUT",
 		Value:  60,
 	})
 	rateLimit := app.Int(cli.IntOpt{
-		Name:   "rateLimit",
+		Name:   "rate-limit",
 		Desc:   "Rate limit mongo operations in milliseconds. (e.g. 250)",
 		EnvVar: "RATE_LIMIT",
 		Value:  250,
 	})
 	batchLimit := app.Int(cli.IntOpt{
-		Name:   "batchLimit",
+		Name:   "batch-limit",
 		Desc:   "The size of data in bytes, that a bulk write is writing into mongodb at once. Not recommended to use more than 16MB (e.g. 15000000)",
 		EnvVar: "BATCH_LIMIT",
 		Value:  15000000,
@@ -88,7 +93,7 @@ func main() {
 			Value:  "30 10 * * *",
 		})
 		dbPath := cmd.String(cli.StringOpt{
-			Name:   "dbPath",
+			Name:   "db-path",
 			Desc:   "Path to store boltdb file",
 			EnvVar: "DBPATH",
 			Value:  "/var/data/mongobackup/state.db",
@@ -117,7 +122,12 @@ func main() {
 				log.Fatalf("failed setting up to read or write scheduled backup status results: %v", err)
 			}
 			defer statusKeeper.Close()
-			storageService := newS3StorageService(*s3bucket, *s3dir, *s3domain, *accessKey, *secretKey)
+			var storageService storageService
+			if *s3bucket != "" {
+				storageService = newS3StorageService(*s3bucket, *s3dir, *s3domain, *accessKey, *secretKey)
+			} else {
+				storageService = newFSStorageService(*fsdir)
+			}
 			backupService := newMongoBackupService(dbService, storageService, statusKeeper)
 			scheduler := newCronScheduler(backupService, statusKeeper)
 			healthService := newHealthService(*healthHours, statusKeeper, parsedColls, healthConfig{
@@ -131,7 +141,7 @@ func main() {
 
 	app.Command("backup", "backup a set of mongodb collections", func(cmd *cli.Cmd) {
 		dbPath := cmd.String(cli.StringOpt{
-			Name:   "dbPath",
+			Name:   "db-path",
 			Desc:   "Path to store boltdb file",
 			EnvVar: "DBPATH",
 			Value:  "/var/data/mongobackup/state.db",
@@ -148,7 +158,12 @@ func main() {
 				log.Fatalf("failed setting up to read or write scheduled backup status results: %v", err)
 			}
 			defer statusKeeper.Close()
-			storageService := newS3StorageService(*s3bucket, *s3dir, *s3domain, *accessKey, *secretKey)
+			var storageService storageService
+			if *s3bucket != "" {
+				storageService = newS3StorageService(*s3bucket, *s3dir, *s3domain, *accessKey, *secretKey)
+			} else {
+				storageService = newFSStorageService(*fsdir)
+			}
 			backupService := newMongoBackupService(dbService, storageService, statusKeeper)
 			if err := backupService.Backup(parsedColls); err != nil {
 				log.Fatalf("backup failed : %v", err)
@@ -171,7 +186,12 @@ func main() {
 			if err != nil {
 				log.Fatalf("failed setting up to read or write scheduled backup status results: %v", err)
 			}
-			storageService := newS3StorageService(*s3bucket, *s3dir, *s3domain, *accessKey, *secretKey)
+			var storageService storageService
+			if *s3bucket != "" {
+				storageService = newS3StorageService(*s3bucket, *s3dir, *s3domain, *accessKey, *secretKey)
+			} else {
+				storageService = newFSStorageService(*fsdir)
+			}
 			backupService := newMongoBackupService(dbService, storageService, &boltStatusKeeper{})
 			if err := backupService.Restore(*dateDir, parsedColls); err != nil {
 				log.Fatalf("restore failed : %v", err)
@@ -180,6 +200,7 @@ func main() {
 	})
 
 	err := app.Run(os.Args)
+	log.Info(os.Args)
 	if err != nil {
 		log.Fatal(err)
 	}

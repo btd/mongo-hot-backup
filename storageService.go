@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 
 	"github.com/klauspost/compress/snappy"
@@ -100,4 +101,40 @@ func (src *snappyReadCloser) Read(p []byte) (int, error) {
 
 func (src *snappyReadCloser) Close() error {
 	return src.readCloser.Close()
+}
+
+type fsStorageService struct {
+	fsdir string
+}
+
+func newFSStorageService(fsdir string) *fsStorageService {
+	return &fsStorageService{
+		fsdir,
+	}
+}
+
+func (s *fsStorageService) Writer(date, database, collection string) (io.WriteCloser, error) {
+	dirPath := filepath.Join(s.fsdir, date, database)
+	err := os.MkdirAll(dirPath, os.ModeDir|0777)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(dirPath, collection+extension)
+	log.Infof("saving to path=%s", path)
+	f, err := os.Create(path)
+	if err != nil {
+		return nil, err
+	}
+	return newSnappyWriteCloser(snappy.NewBufferedWriter(f), f), nil
+}
+
+func (s *fsStorageService) Reader(date, database, collection string) (io.ReadCloser, error) {
+	path := filepath.Join(s.fsdir, date, database, collection+extension)
+
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return newSnappyReadCloser(snappy.NewReader(f), f), nil
 }

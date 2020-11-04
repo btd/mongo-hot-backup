@@ -46,8 +46,7 @@ func (m *mongoService) DumpCollectionTo(database, collection string, writer io.W
 	start := time.Now()
 	log.Infof("backing up %s/%s", database, collection)
 
-	iter := session.SnapshotIter(database, collection, nil)
-	err = iter.Err()
+	iter, err := session.SnapshotIter(database, collection)
 	if err != nil {
 		return fmt.Errorf("Couldn't obtain iterator over collection=%v/%v: %v", database, collection, err)
 	}
